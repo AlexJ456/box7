@@ -23,10 +23,6 @@ document.addEventListener('DOMContentLoaded', () => {
         clock: `<svg class="icon" viewBox="0 0 24 24"><circle cx="12" cy="12" r="10"></circle><polyline points="12 6 12 12 16 14"></polyline></svg>`
     };
 
-    // Audio context for sound (persistent)
-    const audioContext = new (window.AudioContext || window.webkitAudioContext)();
-    let wakeLock = null;
-
     // Helper functions
     function getInstruction(count) {
         switch (count) {
@@ -47,10 +43,7 @@ document.addEventListener('DOMContentLoaded', () => {
     function playTone() {
         if (state.soundEnabled) {
             try {
-                // Resume AudioContext if suspended (required on iOS)
-                if (audioContext.state === 'suspended') {
-                    audioContext.resume();
-                }
+                const audioContext = new (window.AudioContext || window.webkitAudioContext)();
                 const oscillator = audioContext.createOscillator();
                 oscillator.type = 'sine';
                 oscillator.frequency.setValueAtTime(440, audioContext.currentTime); // 440 Hz is A4
@@ -59,34 +52,6 @@ document.addEventListener('DOMContentLoaded', () => {
                 oscillator.stop(audioContext.currentTime + 0.1); // Play for 0.1 seconds
             } catch (e) {
                 console.error('Error playing tone:', e);
-            }
-        }
-    }
-
-    // Request wake lock to prevent screen lock
-    async function requestWakeLock() {
-        if ('wakeLock' in navigator) {
-            try {
-                wakeLock = await navigator.wakeLock.request('screen');
-                wakeLock.addEventListener('release', () => {
-                    console.log('Wake Lock was released');
-                });
-                console.log('Wake Lock acquired');
-            } catch (err) {
-                console.error('Wake Lock failed:', err);
-            }
-        }
-    }
-
-    // Release wake lock
-    async function releaseWakeLock() {
-        if (wakeLock) {
-            try {
-                await wakeLock.release();
-                wakeLock = null;
-                console.log('Wake Lock released');
-            } catch (err) {
-                console.error('Wake Lock release failed:', err);
             }
         }
     }
@@ -103,13 +68,11 @@ document.addEventListener('DOMContentLoaded', () => {
             state.count = 0;
             state.sessionComplete = false;
             state.timeLimitReached = false;
-            // Play tone and request wake lock
+            // Play tone at the beginning of the first phase
             playTone();
-            requestWakeLock();
             startInterval();
         } else {
             clearInterval(interval);
-            releaseWakeLock();
         }
         render();
     }
@@ -123,7 +86,6 @@ document.addEventListener('DOMContentLoaded', () => {
         state.timeLimit = '';
         state.timeLimitReached = false;
         clearInterval(interval);
-        releaseWakeLock();
         render();
     }
 
@@ -145,9 +107,8 @@ document.addEventListener('DOMContentLoaded', () => {
         state.count = 0;
         state.sessionComplete = false;
         state.timeLimitReached = false;
-        // Play tone and request wake lock
+        // Play tone at the beginning of the first phase
         playTone();
-        requestWakeLock();
         startInterval();
         render();
     }
@@ -180,7 +141,6 @@ document.addEventListener('DOMContentLoaded', () => {
                     state.sessionComplete = true;
                     state.isPlaying = false;
                     clearInterval(interval);
-                    releaseWakeLock();
                 }
             } else {
                 state.countdown -= 1;
