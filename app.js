@@ -10,8 +10,14 @@ document.addEventListener('DOMContentLoaded', () => {
         soundEnabled: false,
         timeLimit: '',
         sessionComplete: false,
-        timeLimitReached: false
+        timeLimitReached: false,
+        // Animation state
+        animationProgress: 0 // 0 to 1 for each phase
     };
+
+    // Canvas context reference
+    let canvas, ctx;
+    let animationFrameId;
 
     // SVG Icons
     const icons = {
@@ -56,6 +62,104 @@ document.addEventListener('DOMContentLoaded', () => {
         }
     }
 
+    // Initialize canvas for box animation
+    function initCanvas() {
+        canvas = document.getElementById('box-animation');
+        if (canvas) {
+            ctx = canvas.getContext('2d');
+            // Set canvas size to match its display size
+            const rect = canvas.getBoundingClientRect();
+            canvas.width = rect.width;
+            canvas.height = rect.height;
+        }
+    }
+
+    // Draw the box animation
+    function drawBoxAnimation() {
+        if (!canvas || !ctx) return;
+        
+        // Clear the canvas
+        ctx.clearRect(0, 0, canvas.width, canvas.height);
+        
+        // Calculate box dimensions
+        const padding = 50; // Padding from edges
+        const size = Math.min(canvas.width, canvas.height) - padding * 2;
+        
+        // Start position (bottom left)
+        const startX = padding;
+        const startY = canvas.height - padding;
+        
+        // Calculate current position based on breathing phase and progress
+        let x = startX;
+        let y = startY;
+        const fullProgress = state.count + state.animationProgress;
+        
+        // Set the style
+        ctx.lineWidth = 4;
+        ctx.lineCap = 'round';
+        ctx.lineJoin = 'round';
+        
+        // Draw the box path for all four sides
+        for (let phase = 0; phase < 4; phase++) {
+            // Calculate how much of this side we need to draw (0 to 1)
+            const sideProgress = Math.max(0, Math.min(1, fullProgress - phase));
+            
+            if (sideProgress > 0) {
+                // Calculate opacity based on phase (fade out as we go around)
+                // 4 phases ago means it's fully faded out
+                const age = fullProgress - phase;
+                const opacity = Math.max(0, 1 - (age / 4));
+                
+                // Set the color with appropriate opacity
+                ctx.strokeStyle = `rgba(217, 119, 6, ${opacity})`; // amber-600 with opacity
+                
+                // Start the path
+                ctx.beginPath();
+                ctx.moveTo(x, y);
+                
+                // Calculate end point based on phase
+                let endX = x;
+                let endY = y;
+                
+                switch (phase % 4) {
+                    case 0: // Inhale - move up
+                        endY = startY - size * sideProgress;
+                        break;
+                    case 1: // Hold - move right
+                        y = startY - size; // Start from top left
+                        endX = startX + size * sideProgress;
+                        endY = y;
+                        break;
+                    case 2: // Exhale - move down
+                        x = startX + size; // Start from top right
+                        y = startY - size;
+                        endX = x;
+                        endY = startY - size + size * sideProgress;
+                        break;
+                    case 3: // Wait - move left
+                        x = startX + size; // Start from bottom right
+                        y = startY;
+                        endX = startX + size - size * sideProgress;
+                        endY = y;
+                        break;
+                }
+                
+                // Draw the line
+                ctx.lineTo(endX, endY);
+                ctx.stroke();
+                
+                // Update position for next segment
+                x = endX;
+                y = endY;
+            }
+        }
+        
+        // Request next animation frame if still playing
+        if (state.isPlaying) {
+            animationFrameId = requestAnimationFrame(drawBoxAnimation);
+        }
+    }
+
     // Interval reference
     let interval;
 
@@ -66,13 +170,21 @@ document.addEventListener('DOMContentLoaded', () => {
             state.totalTime = 0;
             state.countdown = 4;
             state.count = 0;
+            state.animationProgress = 0;
             state.sessionComplete = false;
             state.timeLimitReached = false;
             // Play tone at the beginning of the first phase
             playTone();
             startInterval();
+            // Start the animation
+            animationFrameId = requestAnimationFrame(drawBoxAnimation);
         } else {
             clearInterval(interval);
+            // Stop the animation
+            if (animationFrameId) {
+                cancelAnimationFrame(animationFrameId);
+                animationFrameId = null;
+            }
         }
         render();
     }
@@ -82,10 +194,16 @@ document.addEventListener('DOMContentLoaded', () => {
         state.totalTime = 0;
         state.countdown = 4;
         state.count = 0;
+        state.animationProgress = 0;
         state.sessionComplete = false;
         state.timeLimit = '';
         state.timeLimitReached = false;
         clearInterval(interval);
+        // Stop the animation
+        if (animationFrameId) {
+            cancelAnimationFrame(animationFrameId);
+            animationFrameId = null;
+        }
         render();
     }
 
@@ -105,11 +223,14 @@ document.addEventListener('DOMContentLoaded', () => {
         state.totalTime = 0;
         state.countdown = 4;
         state.count = 0;
+        state.animationProgress = 0;
         state.sessionComplete = false;
         state.timeLimitReached = false;
         // Play tone at the beginning of the first phase
         playTone();
         startInterval();
+        // Start the animation
+        animationFrameId = requestAnimationFrame(drawBoxAnimation);
         render();
     }
 
@@ -132,6 +253,7 @@ document.addEventListener('DOMContentLoaded', () => {
                 // We're about to change phases
                 state.count = (state.count + 1) % 4;
                 state.countdown = 4;
+                state.animationProgress = 0; // Reset animation progress for new phase
                 
                 // Play tone at the beginning of each new phase
                 playTone();
@@ -141,9 +263,16 @@ document.addEventListener('DOMContentLoaded', () => {
                     state.sessionComplete = true;
                     state.isPlaying = false;
                     clearInterval(interval);
+                    // Stop the animation
+                    if (animationFrameId) {
+                        cancelAnimationFrame(animationFrameId);
+                        animationFrameId = null;
+                    }
                 }
             } else {
                 state.countdown -= 1;
+                // Update animation progress for smooth movement
+                state.animationProgress = (4 - state.countdown) / 4;
             }
             
             render();
@@ -159,8 +288,11 @@ document.addEventListener('DOMContentLoaded', () => {
         if (state.isPlaying) {
             html += `
                 <div class="timer">Total Time: ${formatTime(state.totalTime)}</div>
-                <div class="instruction">${getInstruction(state.count)}</div>
-                <div class="countdown">${state.countdown}</div>
+                <canvas id="box-animation" style="position: absolute; top: 0; left: 0; width: 100%; height: 100%; z-index: -1;"></canvas>
+                <div style="position: relative; z-index: 1; display: flex; flex-direction: column; align-items: center; justify-content: center;">
+                    <div class="instruction">${getInstruction(state.count)}</div>
+                    <div class="countdown">${state.countdown}</div>
+                </div>
             `;
         }
 
@@ -233,6 +365,15 @@ document.addEventListener('DOMContentLoaded', () => {
         }
 
         app.innerHTML = html;
+
+        // Initialize canvas after it's added to the DOM
+        if (state.isPlaying) {
+            initCanvas();
+            // Only start animation if it's not already running
+            if (!animationFrameId) {
+                animationFrameId = requestAnimationFrame(drawBoxAnimation);
+            }
+        }
 
         // Add event listeners after DOM update
         if (!state.sessionComplete) {
